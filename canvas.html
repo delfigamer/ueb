@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Adaptive Canvas Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #canvas {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        const canvas = document.querySelector('#canvas');
+        const ctx = canvas.getContext('2d');
+
+        // 1. Create a tiny 2x2 off-screen canvas to act as our physical-pixel pattern
+        const patternCanvas = document.createElement('canvas');
+        patternCanvas.width = 2;
+        patternCanvas.height = 2;
+        const pCtx = patternCanvas.getContext('2d');
+        
+        // Draw a 1-pixel checkerboard (Black and White)
+        pCtx.fillStyle = '#ffffff';
+        pCtx.fillRect(0, 0, 2, 2);
+        pCtx.fillStyle = '#000000';
+        pCtx.fillRect(0, 0, 1, 1); // Top-left
+        pCtx.fillRect(1, 1, 1, 1); // Bottom-right
+
+        const recalc = () => {
+            const rect = canvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+
+            // Set the actual memory size of the canvas to physical pixels
+            canvas.width = Math.round(rect.width * dpr);
+            canvas.height = Math.round(rect.height * dpr);
+
+            // --- DRAW PHYSICAL PIXELS ---
+            // Ensure transform is completely reset so we draw 1:1 to physical pixels
+            ctx.setTransform(1, 0, 0, 1, 0, 0); 
+            
+            // Fill the background with our 2x2 pixel pattern
+            const pattern = ctx.createPattern(patternCanvas, 'repeat');
+            ctx.fillStyle = pattern;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // --- DRAW LOGICAL (CSS) PIXELS ---
+            // Now scale the context so the game/UI logic works in CSS pixels
+            ctx.scale(dpr, dpr);
+
+            const cssW = rect.width;
+            const cssH = rect.height;
+
+            // Draw 10x10 logical squares in the corners (using Red to stand out)
+            ctx.fillStyle = '#ff0000';
+            ctx.fillRect(0, 0, 10, 10);
+            ctx.fillRect(cssW - 10, 0, 10, 10);
+            ctx.fillRect(0, cssH - 10, 10, 10);
+            ctx.fillRect(cssW - 10, cssH - 10, 10, 10);
+            
+            // Draw a background box for the text so it's readable over the checkerboard
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(10, cssH - 70, 360, 60);
+
+            // Draw the text
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '16px monospace';
+            ctx.fillText(`Logic Size: ${cssW.toFixed(1)} x ${cssH.toFixed(1)}`, 20, cssH - 45);
+            ctx.fillText(`Physical Size: ${canvas.width} x ${canvas.height} (dPR: ${dpr})`, 20, cssH - 20);
+        };
+
+        window.addEventListener('resize', recalc);
+        recalc();
+    </script>
+</body>
+
+</html>
