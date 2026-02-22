@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <!-- Note: user-scalable=no is often ignored by iOS Safari for accessibility, so we MUST handle zoom! -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>Perfect Pixel Canvas (Safari Proof)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #e8e8e8;
+        }
+        /* The wrapper handles the responsive CSS layout */
+        #wrapper {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            /* This tells the browser: "Do not intercept touches for scrolling or zooming.
+                Pass all raw touch data directly to JavaScript." */
+            touch-action: none;
+        }
+        /* The canvas is absolutely positioned and its CSS size will be dictated by JS */
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform-origin: top left;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="wrapper">
+        <canvas id="canvas"></canvas>
+    </div>
+    <script>
+        const wrapper = document.querySelector('#wrapper');
+        const canvas = document.querySelector('#canvas');
+        const ctx = canvas.getContext('2d');
+
+        // 1. Create our 2x2 physical-pixel checkerboard pattern
+        const patternCanvas = document.createElement('canvas');
+        patternCanvas.width = 2;
+        patternCanvas.height = 2;
+        const pCtx = patternCanvas.getContext('2d');
+        pCtx.fillStyle = '#ffffff';
+        pCtx.fillRect(0, 0, 2, 2);
+        pCtx.fillStyle = '#000000';
+        pCtx.fillRect(0, 0, 1, 1);
+        pCtx.fillRect(1, 1, 1, 1);
+
+        let wrapperRect = { width: 0, height: 0 };
+        let deviceBox = null;
+
+        // 2. Observe the WRAPPER, not the canvas, to prevent infinite loops
+        const resizeObserver = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            wrapperRect = entry.contentRect;
+
+            // Store devicePixelContentBox if the browser supports it (Chrome/Edge)
+            if (entry.devicePixelContentBoxSize && entry.devicePixelContentBoxSize[0]) {
+                deviceBox = entry.devicePixelContentBoxSize[0];
+            } else {
+                deviceBox = null;
+            }
+            recalc();
+        });
+
+        resizeObserver.observe(wrapper, { box: 'device-pixel-content-box' });
+
+        // 3. Listen for Pinch-to-Zoom (Critical for Safari)
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', recalc);
+            window.visualViewport.addEventListener('scroll', recalc);
+        }
+
+        function recalc() {
+            if (!wrapperRect.width || !wrapperRect.height) return;
+
+            // Base DPR, plus Visual Viewport scale for Safari pinch-to-zoom
+            const baseDpr = window.devicePixelRatio || 1;
+            const zoom = window.visualViewport ? window.visualViewport.scale : 1;
+            const effectiveDpr = baseDpr * zoom;
+
+            let physW, physH;
+
+            // If we have native device pixel tracking AND no pinch zoom is active
+            if (deviceBox && zoom === 1) {
+                physW = deviceBox.inlineSize;
+                physH = deviceBox.blockSize;
+
+                // Snap CSS to exact wrapper size
+                canvas.style.width = `${wrapperRect.width}px`;
+                canvas.style.height = `${wrapperRect.height}px`;
+            }
+            // Fallback for Safari, or if the user is actively pinch-zooming
+            else {
+                // We determine the EXACT amount of physical pixels we want
+                physW = Math.round(wrapperRect.width * effectiveDpr);
+                physH = Math.round(wrapperRect.height * effectiveDpr);
+
+                // THE MAGIC TRICK:
+                // We set the canvas CSS size to a specific fraction.
+                // When Safari's compositor multiplies this fraction by effectiveDpr,
+                // it will perfectly hit our integer `physW` without any off-by-one errors.
+                canvas.style.width = `${physW / effectiveDpr}px`;
+                canvas.style.height = `${physH / effectiveDpr}px`;
+            }
+
+            // Assign the exact physical pixels to the canvas backing store
+            if (canvas.width !== physW || canvas.height !== physH) {
+                canvas.width = physW;
+                canvas.height = physH;
+            }
+
+            draw(physW, physH, effectiveDpr);
+        }
+
+        function draw(physW, physH, effectiveDpr) {
+            // CSS logic size for UI placement
+            const cssW = physW / effectiveDpr;
+            const cssH = physH / effectiveDpr;
+
+            // --- DRAW PHYSICAL PIXELS ---
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            const pattern = ctx.createPattern(patternCanvas, 'repeat');
+            ctx.fillStyle = pattern;
+            ctx.fillRect(0, 0, physW, physH);
+
+            // --- DRAW LOGICAL (CSS) PIXELS ---
+            ctx.scale(effectiveDpr, effectiveDpr);
+
+            ctx.fillStyle = '#ff0000';
+            ctx.fillRect(0, 0, 10, 10);
+            ctx.fillRect(cssW - 10, 0, 10, 10);
+            ctx.fillRect(0, cssH - 10, 10, 10);
+            ctx.fillRect(cssW - 10, cssH - 10, 10, 10);
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.fillRect(10, cssH - 90, 420, 80);
+
+            ctx.fillStyle = '#00ff00';
+            ctx.font = '16px monospace';
+            ctx.fillText(`Logic Size : ${cssW.toFixed(2)} x ${cssH.toFixed(2)}`, 20, cssH - 65);
+            ctx.fillText(`Memory Size: ${physW} x ${physH}`, 20, cssH - 40);
+            ctx.fillText(`Effective DPR: ${effectiveDpr.toFixed(2)}`, 20, cssH - 15);
+        }
+    </script>
+</body>
+
+</html>
